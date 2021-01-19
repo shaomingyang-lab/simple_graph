@@ -1,273 +1,287 @@
-from collections import defaultdict
 from math import inf
+from collections import defaultdict
+from .vertices import Vertices
+from .edges import Edges
+
 class Graph:
-    
-    def __init__(self, edges=None, symmetric=True, allow_self_link=False, default_weight=1, verbose=False):
-        self._symmetric = symmetric
-        self._default_weight = default_weight
-        self._allow_self_link = allow_self_link
-        self.verbose = verbose
-        self.clear()
-        if not edges:
-            edges = {}
-        if type(edges) is list:
-            self.add_edges(edges)
-        elif type(edges) is dict or type(edges) is defaultdict:
-            for u in edges:
-                self.add_node(u)
-                if type(edges[u]) is list:
-                    for v in edges[u]:
-                        self.add_edge(u, v)
-                elif type(edges[u]) is dict or type(edges) is defaultdict:
-                    for v in edges[u]:
-                        self.add_edge(u, v, edges[u][v])
-                else:
-                    raise ValueError('Edge format is not correct.')
+  
+  def __init__(self, graph=None, undirected=True, verbose=False):
+    '''
+      init method:
+      
+      edges: a set of edges, default is None, which means empty graph
+      undirected: if the graph is undirected/directed, default it is a undirected graph
+    '''
+    self.has_self_link = False
+    self.verbose = verbose
+    self.undirected = undirected
+    self.V = Vertices(verbose=verbose)
+    self.E = Edges(undirected, verbose=verbose)
+    if graph:
+      if type(graph) is str:
+        self.parse_txt(graph)
+      else:
+        if 'V' in graph:
+          self.parse_vertices(graph['V'])
+        if 'E' in graph:
+          self.parse_edges(graph['E'])
         else:
-            raise ValueError('Edge format is not correct.')
+          self.parse_edges(graph)
+      
+  def parse_vertices(self, vertices):
+    for u in vertices:
+      self.add_vertex(u)
+      
+  def parse_edges(self, edges):
+    if edges is None:
+        return
+    if type(edges) is list:
+      self.add_edges(edges)
+    elif type(edges) is dict or type(edges) is defaultdict:
+      for u in edges:
+        self.add_vertex(u)
+        if type(edges[u]) is list or type(edges[u]) is set:
+          for v in edges[u]:
+            self.add_edge(u, v)
+        elif type(edges[u]) is dict or type(edges) is defaultdict:
+          for v in edges[u]:
+            e = edges[u][v]
+            self.add_edge(u, v, **e)
+        else:
+          raise ValueError('Edge format is not correct.')
+    else:
+      raise ValueError('Edge format is not correct.')
     
-    def clear(self):
-        self._nodes = {}
-        self._edges = defaultdict(dict)
-        self._total_edge_weight = 0
-        self._total_node_edge_weight = defaultdict(int)
+  def clear(self):
+    self.V.clear()
+    self.E.clear()
      
-    @property
-    def nodes(self):
-        return list(self._nodes.keys())
+  @property
+  def vertices(self):
+    return list(self.V._vertices.keys())
+  
+  @property
+  def detailed_vertices(self):
+    return [(v, self.V[v].to_dict()) for v in self.V._vertices]
+  
+  @property
+  def detailed_edges(self):
+    return [(u, v, self.E[u, v].to_dict()) for (u, v) in self.edges]
     
-    @property
-    def edges(self):
-        edges = []
-        if self._symmetric:
-            return [(u, v) for u in self._edges for v in self._edges[u] if u <= v]
-        else:
-            return [(u, v) for u in self._edges for v in self._edges[u]]
+  @property
+  def edges(self):
+    return self.E.items
+  
+  def parse_txt(self, txt):
+    '''
+        load the graph from txt
+    '''
+    self.clear()
+    mode = 'edge'
+    options = []
+    edge_list = []
+    lines = [line.strip() for line in txt.split('\n') if line.strip()]
+    for line in lines:
+      p = line.find('#')
+      if p != -1:
+        command_line = line[p+1:].strip()
+        commands = command_line.split()
+        command = commands[0]
+        options = []
+        if len(commands) > 1:
+          options = commands[1].split(',')
+        if command == 'V':
+          mode = 'vertex'
+          continue
+        if command == 'E':
+          mode = 'edge'
+          continue
+      x = line.split(',')
+      if mode == 'vertex':
+        self.add_vertex(x[0], **{key: value for key, value in zip(options, x[1:])})
+      elif mode == 'edge':
+        self.add_edge(x[0], x[1], **{key: value for key, value in zip(options, x[2:])})
     
-    @property
-    def edge_weights(self):
-        edges = []
-        for u in self._edges:
-            for v in self._edges[u]:
-                edges.append((u, v, self._edges[u][v]))
-        return edges
-    
-    def load(self, file_name):
-        self.clear()
-        edge_list = []
-        with open(file_name) as f:
-            for line in f:
-                edge_list.append(line.split())
-            self.add_edges(edge_list)
+  def load(self, file_name):
+    '''
+        load the graph from file <file_name>
+    '''
+    with open(file_name) as f:
+      txt = f.read()
+      self.parse_txt(txt)
             
-    def add_edges(self, edge_list):
-        for edge in edge_list:
-            u = edge[0]
-            v = edge[1]
-            w = self._default_weight
-            if len(edge) > 2:
-                w = edge[2]
-            self.add_edge(u, v, w)
+  def add_edges(self, edge_list):
+    for edge in edge_list:
+      u = edge[0]
+      v = edge[1]
+      e = {}
+      if len(edge) > 2:
+        e = edge[2]
+        
+      self.add_edge(u, v, **e)
             
-    def remove_edges(self, edge_list):
-        for edge in edge_list:
-            u = edge[0]
-            v = edge[1]
-            self.remove_edge(u, v)
+  def remove_edges(self, edge_list):
+    for edge in edge_list:
+      u = edge[0]
+      v = edge[1]
+      self.remove_edge(u, v)
+  
+  def vertex(self, v):
+    return self.V[v]
+  
+  def add_vertex(self, v, **kwargs):
+    if self.verbose:
+      print('add vertex', v)
+    self.V.add(v, **kwargs)
+  
+  def remove_vertex(self, v):
+    vertex = self.V.remove(v)
+    if vertex is None:
+      if self.verbose:
+        print('Vertex', v, 'can not be found, abort.')
+    self.E.remove_vertex(v)
     
-    def add_edge(self, u, v, weight=None):
-        if u == v:
-            self._allow_self_link = True
-        if weight == None:
-            weight = self._default_weight
+  def has_vertex(self, v):
+    vertex = self.vertex(v)
+    return True if vertex else False
+  
+  def neighbors(self, v):
+    return [n for n in self.E.neighbors(v)]
+  
+  def reverse_neighbors(self, v):
+    return [n for n in self.E.reverse_neighbors(v)]
+  
+  def edge(self, u, v):
+    return self.E[u, v]
+  
+  def has_edge(self, u, v):
+    return True if self.edge(u, v) else False
+    
+  def add_edge(self, u, v, allow_add_vertex=True, **kwargs):
+    if u == v:
+      self.has_self_link = True
+    if self.verbose:
+      print(f'add edge ({u}, {v})')
+    if not self.has_vertex(u):
+      if allow_add_vertex:
+        self.add_vertex(u)
+      else:
         if self.verbose:
-            print('add edge', u, v)
-        old_weight = self._edges[u].get(v, 0)
-        self._edges[u][v] = weight
-        self._total_node_edge_weight[v] += weight - old_weight
-        self._total_edge_weight += weight - old_weight
-        if u not in self._nodes:
-            self.add_node(u)
-        if v not in self._nodes:
-            self.add_node(v)
-        if self._symmetric:
-            if self.verbose:
-                print('add edge', v, u)
-            old_weight = self._edges[v].get(u, 0)
-            self._edges[v][u] = weight
-            self._total_node_edge_weight[u] += weight - old_weight
-            self._total_edge_weight += weight - old_weight
-            
-    def remove_edge(self, u, v):
+          print(f'Failed to find vertex {u}, abort.')
+        return
+    if not self.has_vertex(v):
+      if allow_add_vertex:
+        self.add_vertex(v)
+      else:
         if self.verbose:
-            print('remove edge', u, v)
-        weight = self._edges[u].pop(v, None)
-        if weight:
-            self._total_node_edge_weight[v] -= weight
-            self._total_edge_weight -= weight
-        if self._symmetric:
-            if self.verbose:
-                print('remove', v, u)
-            weight = self._edges[v].pop(u, None)
-            if weight:
-                self._total_node_edge_weight[u] -= weight
-                self._total_edge_weight -= weight
+          print(f'Failed to find vertex {v}, abort.')
+        return
+    self.E.add(u, v, **kwargs)
             
-    def has_edge(self, u, v):
-        if u not in self._edges:
-            return False
-        if v not in self._edges[u]:
-            return False
-        return True
-            
-    def add_node(self, u, weight=None):
-        if weight == None:
-            weight = self._default_weight
-        self._nodes[u] = weight
+  def remove_edge(self, u, v):
+    if self.verbose:
+      print('remove edge', u, v)
+    self.E.remove(u, v)
+    
+  def degree(self, v):
+    neighbors = self.neighbors(v)
+    return len(neighbors) + neighbors.count(v)
+    
+  def degrees(self):
+    return sorted([self.degree(u) for u in self.vertices], reverse=True)
+    
+  def min_degree(self):
+    return min([self.degree(u) for u in self.vertices])
+    
+  def max_degree(self):
+    return max([self.degree(u) for u in self.vertices])
+    
+  def density(self):
+    V = len(self.vertices)
+    E = len(self.edges)
+    if self.undirected:
+      E *= 2
+    return E / V ** 2 if self.has_self_link else E / (V * (V-1))
         
-    def remove_node(self, u, weight=None):
-        weight = self._nodes.pop(u, None)
-        if weight:
-            for v in list(self._edges[u]):
-                self.remove_edge(u, v)
-            self._edges.pop(u, None)
-            if not self._symmetric:
-                for edge in self.edges:
-                    if edge[1] == u:
-                        self.remove_edge(edge[0], edge[1])
-        
-    def has_node(self, u):
-        if u in self._nodes:
-            return True
-        else:
-            return False
+  def is_connected(self, vis=None, start=None):
+    if vis is None:
+      vis = set()
+    if not start:
+      start = self.vertices[0]
+    vis.add(start)
+    if len(vis) == len(self.vertices):
+      return True
+    else:
+      for v in self.E.neighbors(start):
+        if v not in vis and self.is_connected(vis, v):
+          return True
+      return False
+
+  def total_edge_weight(self, v=None):
+    if v is None:
+        return sum([self.total_edge_weight(v) for v in self.vertices])
+    if not self.has_vertex(v):
+      return 0
+    return sum([self.E[n, v].weight if hasattr(self.E[n, v], 'weight') else 1.0 for n in self.E.reverse_neighbors(v)])
+  
+  def total_vertex_weight(self):
+    return sum([self.vertex(v).weight if hasattr(self.vertex(v), 'weight') else 1.0 for v in self.vertices])
+
+  def find_isolated_vertices(self):
+    isolated = []
+    for v in self.vertices:
+      if not self.neighbors(v) and not self.reverse_neighbors(v):
+        isolated.append(v)
+    return isolated
     
-    def node_degree(self, u):
-        neighbors = self.neighbors(u)
-        return len(neighbors) + neighbors.count(u)
+  def find_path(self, start, end, path=None):
+    if start not in self.vertices or end not in self.vertices:
+      return None
+    if not path:
+      path = []
+
+    path = path + [start]
+    if start == end:
+      return path
+    for n in self.neighbors(start):
+      if n not in path:
+        extend_path = self.find_path(n, end, path)
+        if extend_path:
+          return extend_path        
+    return None
     
-    def node_degrees(self):
-        node_degrees = []
-        for u in self.nodes:
-            node_degrees.append(self.node_degree(u))
-        node_degrees.sort(reverse=True)
-        return node_degrees
+  def find_all_paths(self, start, end, path=None):
+    if start not in self.vertices or end not in self.vertices:
+      return []
+    if not path:
+      path = []
+
+    path = path + [start]
+    if start == end:
+      return [path]
+    paths = []
+    for n in self.neighbors(start):
+      if n not in path:
+        for p in self.find_all_paths(n, end, path):
+          paths.append(p)
+    return paths
     
-    def min_degree(self):
-        min_degree = inf
-        for u in self.nodes:
-            node_degree = self.node_degree(u)
-            if node_degree < min_degree:
-                min_degree = node_degree
-        return min_degree
+  def diameter(self):
+    if not self.is_connected():
+      return inf
+    V = self.vertices
+    pairs = [(V[i], V[j]) for i in range(len(V)-1) for j in range(i+1, len(V))]
+    smallest_paths = []
+    for (s,e) in pairs:
+      paths = self.find_all_paths(s,e)
+      smallest = sorted(paths, key=len)[0]
+      smallest_paths.append(smallest)
+    smallest_paths.sort(key=len)
+    diameter = len(smallest_paths[-1])-1
+    return diameter
     
-    def max_degree(self):
-        max_degree = 0
-        for u in self.nodes:
-            node_degree = self.node_degree(u)
-            if node_degree > max_degree:
-                max_degree = node_degree
-        return max_degree
-    
-    def density(self):
-        V = len(self.nodes)
-        E = len(self.edges)
-        if self._symmetric:
-            E *= 2
-        return float(f'{E / V ** 2 if self._allow_self_link else E / (V * (V-1)):.4f}')
-        
-    def is_connected(self, vis_nodes=None, start=None):
-        if vis_nodes is None:
-            vis_nodes = set()
-        nodes = self.nodes
-        if not start:
-            start = nodes[0]
-        vis_nodes.add(start)
-        if len(vis_nodes) == len(nodes):
-            return True
-        else:
-            for u in self.neighbors(start):
-                if u not in vis_nodes and self.is_connected(vis_nodes, u):
-                    return True
-        return False
-        
-        
-    def neighbors(self, u):
-        if not self.has_node(u):
-            return None
-        return list(self._edges[u].keys())
-    
-    def node_weight(self, i):
-        if i not in self._nodes:
-            return None
-        return self._nodes[i]
-        
-    def edge_weight(self, u, v):
-        if u not in self._edges or v not in self._edges[u]:
-            return None
-        return self._edges[u][v]
-    
-    def total_edge_weight(self, u=None):
-        if u == None:
-            return self._total_edge_weight
-        
-        if not self.has_node(u):
-            return 0
-        
-        return self._total_node_edge_weight[u]
-    
-    def find_isolated_nodes(self):
-        isolated = []
-        for n in self.nodes:
-            if not self.neighbors(n):
-                isolated.append(n)
-        return isolated
-    
-    def find_path(self, start, end, path=None):
-        if start not in self.nodes or end not in self.nodes:
-            return None
-        if not path:
-            path = []
-            
-        path = path + [start]
-        if start == end:
-            return path
-        for n in self.neighbors(start):
-            if n not in path:
-                extend_path = self.find_path(n, end, path)
-                if extend_path:
-                    return extend_path        
-        return None
-    
-    def find_all_paths(self, start, end, path=None):
-        if start not in self.nodes or end not in self.nodes:
-            return []
-        if not path:
-            path = []
-            
-        path = path + [start]
-        if start == end:
-            return [path]
-        paths = []
-        for n in self.neighbors(start):
-            if n not in path:
-                for p in self.find_all_paths(n, end, path):
-                    paths.append(p)
-        return paths
-    
-    def diameter(self):
-        if not self.is_connected():
-            return inf
-        nodes = self.nodes
-        pairs = [(nodes[i],nodes[j]) for i in range(len(nodes)-1) for j in range(i+1, len(nodes))]
-        smallest_paths = []
-        for (s,e) in pairs:
-            paths = self.find_all_paths(s,e)
-            smallest = sorted(paths, key=len)[0]
-            smallest_paths.append(smallest)
-        smallest_paths.sort(key=len)
-        diameter = len(smallest_paths[-1])-1
-        return diameter
-    
-    def __repr__(self):
-        return str(dict(self._edges))
+  def __repr__(self):
+    return str({'V': self.vertices, 'E': self.edges})
+  
+  def to_dict(self):
+    return {'V': self.detailed_vertices, 'E': self.detailed_edges}
